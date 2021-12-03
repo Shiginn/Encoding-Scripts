@@ -1,0 +1,12 @@
+# index files
+**/*.lwi
+**/*.ffindex
+**/batch.py
+
+# unwanted folders
+**/.vspreview
+**/BDMV
+**/results
+
+# python garbage
+**/__pycache__
