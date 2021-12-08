@@ -1,0 +1,10 @@
+-o {clip_output:s} - --y4m --fps {fps_num:d}/{fps_den:d} --frames {frames:d} --output-depth {bits:d}
+--preset slow 
+--ref 6
+--rd 3 --rskip 0 --tu-intra-depth 2 --tu-inter-depth 2
+--no-strong-intra-smoothing
+--psy-rd 1.5 --psy-rdoq 1.5
+--bframes 16 --rc-lookahead 72
+--crf 16.25 --aq-mode 3 --aq-strength 0.7 --no-cutree
+--no-sao --deblock -1:-1
+--sar 1 --videoformat ntsc --range limited --colormatrix bt709 --colorprim bt709 --transfer bt709 --min-luma {min_luma:d} --max-luma {max_luma:d}
