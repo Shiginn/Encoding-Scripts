@@ -54,7 +54,7 @@ class Encoder:
         if get_depth(self.clip) != 10:
             self.clip = depth(self.clip, 10)
 
-        v_encoder = X265Encoder("common/settings/x265_settings")
+        v_encoder = X265Encoder("common/x265_settings")
 
         a_extract = FFmpegAudioExtracter(self.file, track_in=1, track_out=1)
 

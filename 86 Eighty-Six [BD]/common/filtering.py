@@ -2,8 +2,9 @@ import vapoursynth as vs
 import lvsfunc as lvf
 import vardefunc as vdf
 import havsfunc as haf
+import EoEfunc as eoe
 from vsutil import depth, get_y
-from debandshit.debanders import dumb3kdb
+from debandshit import dumb3kdb
 from vardautomation import FileInfo
 
 from typing import List, Optional, Tuple
@@ -67,7 +68,7 @@ class EightySixFiltering():
         return self.grain_clip
 
 
-    def filtersteps(self, display_frame: int = 0, display_props: int = 0, font_scaling: int = 1) -> List[vs.VideoNode]:
+    def filtersteps(self, display_frame: int = 0, display_props: int = 0, font_scaling: int = 1):
         """Debug output of each filter step"""
         outputs = {
             "src": self.JP_BD.clip_cut,
@@ -91,54 +92,46 @@ class EightySixFiltering():
 
 
     def denoise(self, clip: vs.VideoNode) -> vs.VideoNode:
-        """Weak denoise with KNLMeansCL"""
-        denoise_y = core.knlm.KNLMeansCL(clip, h=0.6, device_type="gpu", device_id=0, channels="Y")
-        denoise_uv = core.knlm.KNLMeansCL(clip, h=0.85, device_type="gpu", device_id=0, channels="UV")
-
-        denoise = core.std.ShufflePlanes([denoise_y, denoise_uv], [0, 1, 2], vs.YUV)
-
-        return denoise
+        """Weak denoise with BM3D Cuda"""
+        return eoe.denoise.BM3D(clip, sigma=[0.8, 1, 1], radius=1, chroma=True, CUDA=True)
 
 
     def aa(self, clip: vs.VideoNode) -> vs.VideoNode:
         """Strong AA with clamped based_aa and sraa"""
         baa = lvf.aa.based_aa(clip, "common/FSRCNNX_x2_56-16-4-1.glsl")
-        sraa = lvf.aa.upscaled_sraa(clip, rfactor=1.5)
-        aa_clamped = lvf.aa.clamp_aa(clip, baa, sraa, strength=1.35)
+        sraa = lvf.aa.upscaled_sraa(clip, rfactor=1.75)
+        aa_clamped = lvf.aa.clamp_aa(clip, baa, sraa, strength=1.75)
 
         lmask = self.line_mask(clip)
         aa_masked = core.std.MaskedMerge(clip, aa_clamped, lmask)
 
         return aa_masked
 
-    
-    def dehalo(self, clip: vs.VideoNode) -> vs.VideoNode:
-        """Dehalo + edge cleaning with FineDehalo and EdgeCleaner"""
-        dehalo = haf.FineDehalo(clip, rx=1.5, darkstr=0)
-        edge_clean = haf.EdgeCleaner(dehalo)
 
-        return edge_clean
+    def dehalo(self, clip: vs.VideoNode) -> vs.VideoNode:
+        """Dehalo with havsfunc's FineDehalo"""
+        return haf.FineDehalo(clip, rx=1.2, darkstr=0)
 
 
     def deband(self, clip: vs.VideoNode) -> vs.VideoNode:
-        """Deband with masked_f3kdb"""
+        """Deband with masked neo_f3kdb"""
         detail_mask = lvf.mask.detail_mask(clip, brz_a=0.03, brz_b=0.045)
         detail_mask = core.std.BoxBlur(detail_mask)
 
-        deband = dumb3kdb(clip, radius=24, threshold=20, grain=0, use_neo=True)
+        deband = dumb3kdb(clip, radius=24, threshold=20, grain=[24, 12])
 
         return core.std.MaskedMerge(deband, clip, detail_mask)
 
-    
+
     def grain(self, clip: vs.VideoNode) -> vs.VideoNode:
         """Adaptive granning -> static + no chroma"""
 
         seed = sum([ord(x) for x in "shigin"])
         grain = vdf.noise.Graigasm(
             thrs=[x << 8 for x in [32, 80, 128, 176]],
-            strengths=[(0.25, 0), (0.20, 0), (0.15, 0), (0.10, 0)],
-            sizes=[1.25, 1.20, 1.15, 1.10],
-            sharps=[90, 80, 70, 60],
+            strengths=[(0.20, 0), (0.15, 0), (0.10, 0), (0.10, 0)],
+            sizes=[1.35, 1.30, 1.25, 1.20],
+            sharps=[85, 75, 65, 55],
             grainers=[
                 vdf.noise.AddGrain(constant=True, seed=seed),
                 vdf.noise.AddGrain(constant=True, seed=seed),
@@ -188,12 +181,8 @@ class EightySixFiltering():
 
     def filter_ed(self, clip: vs.VideoNode, NCED: FileInfo) -> vs.VideoNode:
         """Filters ED with much lighter filtering"""
-        ec = haf.EdgeCleaner(self.denoise_clip, strength=15)        
-        return lvf.rfs(clip, ec, self.ed_ranges)
+        return lvf.rfs(clip, self.denoise_clip, self.ed_ranges)
 
 
     def line_mask(self, clip: vs.VideoNode) -> vs.VideoNode:
-        y = get_y(clip)
-        lmask = y.std.Prewitt().std.Binarize(60<<8).std.Maximum().std.BoxBlur()
-
-        return lmask
+        return get_y(clip).std.Prewitt().std.Binarize(60<<8).std.Maximum().std.BoxBlur()
