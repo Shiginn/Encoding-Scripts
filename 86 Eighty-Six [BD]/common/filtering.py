@@ -171,10 +171,9 @@ class EightySixFiltering():
             (op_start + 1792, op_end)
         ]
 
-        denoise = self.denoise(self.JP_BD.clip_cut)
-        merged = lvf.rfs(denoise, clip, op_filter_ranges)
+        merged = lvf.rfs(self.denoise_clip, clip, op_filter_ranges)
 
-        credit_merged = core.std.MaskedMerge(merged, denoise, depth(credit_mask, 16))
+        credit_merged = core.std.MaskedMerge(merged, self.denoise_clip, depth(credit_mask, 16))
 
         return lvf.rfs(clip, credit_merged, self.op_ranges)
 
