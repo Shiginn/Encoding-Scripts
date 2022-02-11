@@ -4,8 +4,13 @@
 
 # unwanted folders
 .vspreview
-BDMV
 results
+BDMV
+BDRemux
+BD
+DVD
+WEB
+premux
 
 # unwanted files
 FSRCNNX_x2_56-16-4-1.glsl
@@ -16,8 +21,10 @@ batch.py
 **.265
 **.hevc
 **.mkv
+**.png
 **.wav
 **.aac
+**.m4a
 **.xml
 **.txt
 
