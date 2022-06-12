@@ -106,9 +106,9 @@ class Encoder:
 
         self.clip = clip
         self.file = file
-        self.file.name_file_final = VPath(f"./premux/{self.ep_num}_premux.mkv")
 
         self.ep_num = ep_num
+        self.file.name_file_final = VPath(f"./premux/{self.ep_num}_premux.mkv")
 
         self.chapters = chapters
         self.chapters_names = chapters_names

@@ -13,8 +13,6 @@ core = vs.core
 class ParseBD:
     bdmv_folder: Path
     episodes: List[VPath]
-    ncops: List[VPath] | None
-    nceds: List[VPath] | None
     episode_number: int
 
     _bd_vols: List[Path]
