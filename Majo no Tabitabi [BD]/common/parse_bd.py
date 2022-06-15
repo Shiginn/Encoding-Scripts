@@ -1,10 +1,10 @@
 __all__ = ["ParseBD"]
 
 from pathlib import Path
-from typing import Any, List
+from typing import Any, Dict, List
 
 import vapoursynth as vs
-from vardautomation import (Chapter, FileInfo, MplsReader, PresetBD,
+from vardautomation import (Chapter, FileInfo, MplsChapters, MplsReader, PresetBD,
                             PresetOpus, VPath)
 
 core = vs.core
@@ -46,7 +46,7 @@ class ParseBD:
 
 
 
-    def _parse_playlist(self, bd_vol: Path, playlist: int):
+    def _parse_playlist(self, bd_vol: Path, playlist: int) -> List[MplsChapters]:
         return MplsReader(self.bdmv_folder / bd_vol).get_playlist()[playlist].mpls_chapters
 
 
@@ -62,7 +62,7 @@ class ParseBD:
         if isinstance(ep_num, str):
             ep_num = int(ep_num)
 
-        args = dict(trims_or_dfs=(24, -24), preset=[PresetBD, PresetOpus], idx=core.lsmas.LWLibavSource)
+        args: Dict[str, Any] = dict(trims_or_dfs=(24, -24), preset=[PresetBD, PresetOpus], idx=core.lsmas.LWLibavSource)
         args |= fileinfo_args
 
         return FileInfo(self.episodes[ep_num - 1], **args)
