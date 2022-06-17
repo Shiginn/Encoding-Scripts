@@ -4,8 +4,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import vapoursynth as vs
-from vardautomation import (Chapter, FileInfo, MplsChapters, MplsReader, PresetBD,
-                            PresetOpus, VPath)
+from vardautomation import Chapter, FileInfo, MplsChapters, MplsReader, PresetBD, PresetOpus, VPath
 
 core = vs.core
 
@@ -20,21 +19,30 @@ class ParseBD:
     _ep_per_vol: List[int]
     _ep_playlist: List[int]
 
-    def __init__(self, bdmv_folder: str, bd_volumes: List[str], ep_playlist: int | List[int] = 1) -> None:
+    def __init__(self, bdmv_folder: str, bd_volumes: List[str] | None = None, ep_playlist: int | List[int] = 1) -> None:
         """
         Parse a Blu-Ray (BD) by reading the playlist files in order to get the list of episodes
 
         :param bdmv_folder:     Path to the BDMV folder that contains every volume
-        :param bd_volumes:      Path to every volume of the BD (relative to the BDMV folder)
+        :param bd_volumes:      Path to every volume of the BD (relative to the BDMV folder). Will try to automatically
+                                find them if None.
         :param ep_playlist:     Playlist file for the episodes (defaults to 1, can be set for each volume)
         """
         self.bdmv_folder = Path(bdmv_folder).resolve()
-        self._bd_vols = [Path(self.bdmv_folder / bd_vol).resolve() for bd_vol in bd_volumes]
+        if not self.bdmv_folder.exists():
+            raise ValueError("Invalid BDMV path")
+
+        if bd_volumes:
+            vols = [Path(self.bdmv_folder / bd_vol).resolve() for bd_vol in bd_volumes]
+        else:
+            subdirs = [x for x in self.bdmv_folder.iterdir() if x.is_dir()]
+            vols = [self._find_vol_path(vol) for vol in subdirs]  # type: ignore
+
+        if any(path is None or not path.exists() for path in vols):
+            raise ValueError("Invalid volume path or could not find volume")
+        self._bd_vols = vols
+
         self._vol_number = len(self._bd_vols)
-
-        if any(not path.exists() for path in [self.bdmv_folder] + self._bd_vols):
-            raise ValueError("Invalid path")
-
         self._ep_playlist = self._validate_list(ep_playlist, self._vol_number)
 
         self._ep_per_vol = []
@@ -45,9 +53,24 @@ class ParseBD:
             self._ep_per_vol += [len(eps)]
 
 
+    def _find_vol_path(self, root_dir: Path) -> Path | None:
+        subdirs = [x.name for x in root_dir.iterdir() if x.is_dir()]
+
+        if "BDMV" in subdirs and "CERTIFICATE" in subdirs:
+            return root_dir
+
+        elif len(subdirs):
+            for dir in subdirs:
+                path = self._find_vol_path(root_dir / dir)
+
+                if path is not None:
+                    return path
+
+        return None  # mypy why ?
+
 
     def _parse_playlist(self, bd_vol: Path, playlist: int) -> List[MplsChapters]:
-        return MplsReader(self.bdmv_folder / bd_vol).get_playlist()[playlist].mpls_chapters
+        return MplsReader(bd_vol).get_playlist()[playlist].mpls_chapters
 
 
     def get_episode(self, ep_num: int | str, **fileinfo_args: Any) -> FileInfo:
