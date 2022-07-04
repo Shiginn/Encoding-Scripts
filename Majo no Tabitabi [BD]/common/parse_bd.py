@@ -1,7 +1,7 @@
 __all__ = ["ParseBD"]
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Sequence, cast
 
 import vapoursynth as vs
 from vardautomation import Chapter, FileInfo, MplsChapters, MplsReader, PresetBD, PresetOpus, VPath
@@ -12,14 +12,14 @@ core = vs.core
 class ParseBD:
     bdmv_folder: Path
     episodes: List[VPath]
+    chapters: List[MplsChapters]
     episode_number: int
 
-    _bd_vols: List[Path]
-    _vol_number: int
-    _ep_per_vol: List[int]
-    _ep_playlist: List[int]
-
-    def __init__(self, bdmv_folder: str, bd_volumes: List[str] | None = None, ep_playlist: int | List[int] = 1) -> None:
+    def __init__(
+        self, bdmv_folder: str | Path,
+        bd_volumes: Sequence[str | Path] | None = None,
+        ep_playlist: int | Sequence[int] = 1
+    ) -> None:
         """
         Parse a Blu-Ray (BD) by reading the playlist files in order to get the list of episodes
 
@@ -39,18 +39,26 @@ class ParseBD:
             vols = [self._find_vol_path(vol) for vol in subdirs]  # type: ignore
 
         if any(path is None or not path.exists() for path in vols):
-            raise ValueError("Invalid volume path or could not find volume")
-        self._bd_vols = vols
+            raise ValueError("Invalid volume path or could not find BD volume")
+        vols = cast(List[Path], vols)  # type: ignore  # mypy is so fucking dumb
 
-        self._vol_number = len(self._bd_vols)
-        self._ep_playlist = self._validate_list(ep_playlist, self._vol_number)
 
-        self._ep_per_vol = []
+        vol_num = len(vols)
+        if not isinstance(ep_playlist, Sequence):
+            ep_playlist = [ep_playlist] * vol_num
+        elif len(ep_playlist) < vol_num:
+            ep_playlist = list(ep_playlist) + ([ep_playlist[-1]] * (vol_num - len(ep_playlist)))
+        elif len(ep_playlist) > vol_num:
+            raise ValueError(f"Too many playlist values, expected {vol_num} max")
+
         self.episodes = []
-        for bd_vol, p in zip(self._bd_vols, self._ep_playlist):
-            eps = [chap.m2ts for chap in self._parse_playlist(bd_vol, p)]
-            self.episodes += eps
-            self._ep_per_vol += [len(eps)]
+        self.chapters = []
+        for bd_vol, p in zip(vols, ep_playlist):
+            chaps = MplsReader(bd_vol).get_playlist()[p].mpls_chapters
+            self.episodes += [chap.m2ts for chap in chaps]
+            self.chapters += chaps
+
+        self.episode_number = len(self.episodes)
 
 
     def _find_vol_path(self, root_dir: Path) -> Path | None:
@@ -69,15 +77,11 @@ class ParseBD:
         return None  # mypy why ?
 
 
-    def _parse_playlist(self, bd_vol: Path, playlist: int) -> List[MplsChapters]:
-        return MplsReader(bd_vol).get_playlist()[playlist].mpls_chapters
-
-
     def get_episode(self, ep_num: int | str, **fileinfo_args: Any) -> FileInfo:
         """
         Get FileInfo object of an episode
 
-        :param ep_num:          Episode to get
+        :param ep_num:          Episode to get (not zero-based)
         :param fileinfo_args:   Additional parameters to be passed to FileInfo
 
         :return:                FileInfo object
@@ -97,30 +101,11 @@ class ParseBD:
     ) -> List[Chapter]:
         """Get a list of chapters of an episode
 
-        :param ep_num:      Episode to get
+        :param ep_num:      Episode to get (not zero-based)
 
         :return:            List of chapters
         """
         if isinstance(ep_num, str):
             ep_num = int(ep_num)
 
-        offset = 0
-        i = 0
-        while ep_num > (vol_eps := self._ep_per_vol[i]):
-            ep_num -= vol_eps
-            offset += vol_eps
-            i += 1
-
-        return self._parse_playlist(self._bd_vols[i], self._ep_playlist[i])[ep_num - 1].to_chapters()
-
-
-    @staticmethod
-    def _validate_list(src: Any, target_length: int) -> List[Any]:
-        if not isinstance(src, list):
-            return [src] * target_length
-        elif len(src) < target_length:
-            return list(src) + ([src[-1]] * (target_length - len(src)))
-        elif len(src) > target_length:
-            raise ValueError(f"Too many playlist values, expected {target_length} max")
-
-        return src
+        return self.chapters[ep_num - 1].to_chapters()

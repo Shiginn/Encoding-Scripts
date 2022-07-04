@@ -1,22 +1,27 @@
-__all__ = ["BDMV", "get_encoder"]
+__all__ = ["BDMV", "NCOP", "NCED", "get_encoder"]
 
 import os
 from typing import List, Sequence
 
 import vapoursynth as vs
-from vardautomation import JAPANESE, X265, Chapter, FileInfo, OpusEncoder
+from vardautomation import JAPANESE, X265, Chapter, FileInfo, OpusEncoder, PresetBD
 
 from .encode import Encoder
 from .parse_bd import ParseBD
 
 
 BDMV = ParseBD(
-    bdmv_folder=os.path.join(os.path.dirname(__file__), "../BDMV"),
-    bd_volumes=[f"Wandering Witch - The Journey of Elaina Volume {i}" for i in range(1, 3)]
-    # bd_volumes=[
-    #     "Wandering Witch - The Journey of Elaina Volume 1",
-    #     "Wandering Witch - The Journey of Elaina Volume 2"
-    # ]
+    os.path.join(os.path.dirname(__file__), "../BDMV")
+)
+
+NCOP = FileInfo(
+    BDMV.bdmv_folder / "Wandering Witch - The Journey of Elaina Volume 1/BDMV/STREAM/00007.m2ts",
+    trims_or_dfs=(24, -24), preset=[PresetBD]
+)
+
+NCED = FileInfo(
+    BDMV.bdmv_folder / "Wandering Witch - The Journey of Elaina Volume 1/BDMV/STREAM/00016.m2ts",
+    trims_or_dfs=(24, -24), preset=[PresetBD]
 )
 
 
@@ -28,7 +33,7 @@ def get_encoder(
     file.set_name_clip_output_ext(".hevc")
 
     enc = Encoder(file, clip, ep_num, chapters, chapters_names)
-    enc.video_encoder(X265, settings="common/x265_settings")
+    enc.video_encoder(X265, settings="common/x265_settings", resumable=True)
 
     if chapters and chapters_names:
         enc.make_chapters()

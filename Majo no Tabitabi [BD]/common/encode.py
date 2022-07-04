@@ -4,12 +4,12 @@ __all__ = ["Encoder"]
 
 import os
 from fractions import Fraction
-from pathlib import Path
 from shutil import rmtree
-from typing import Any, Dict, List, Sequence, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Sequence, Tuple, Type, Union
 
 import vapoursynth as vs
-from lvsfunc.misc import source
+from lvsfunc import source, find_scene_changes
+from lvsfunc.types import SceneChangeMode
 from vardautomation import (
     FileInfo, VPath,
     X265, X264, FFV1, NVEncCLossless,
@@ -25,39 +25,28 @@ from vardautomation import (
 )
 
 
-class Types:
-    VIDEO_ENCODER = Union[X264, X265]
-    VIDEO_LOSSLESS_ENCODER = Union[FFV1, NVEncCLossless]
+# Types
+VIDEO_ENCODER = Union[X264, X265]
+VIDEO_LOSSLESS_ENCODER = Union[FFV1, NVEncCLossless]
 
-    AUDIO_EXTRACTOR = Union[FFmpegAudioExtracter, MKVAudioExtracter, Eac3toAudioExtracter]
-    AUDIO_CUTTER = Union[EztrimCutter, SoxCutter, ScipyCutter, PassthroughCutter]
-    AUDIO_ENCODER = Union[FlacEncoder, OpusEncoder, QAACEncoder, PassthroughAudioEncoder]
+AUDIO_EXTRACTER = Union[FFmpegAudioExtracter, MKVAudioExtracter, Eac3toAudioExtracter]
+AUDIO_CUTTER = Union[EztrimCutter, SoxCutter, ScipyCutter, PassthroughCutter]
+AUDIO_ENCODER = Union[FlacEncoder, OpusEncoder, QAACEncoder, PassthroughAudioEncoder]
 
-    CHAPTER = Union[OGMChapters, MatroskaXMLChapters]
+# these exist so that func signature is readable in vscode
+AUDIO_EXTRACTER_TYPE = Union[Type[AUDIO_EXTRACTER], None]
+AUDIO_CUTTER_TYPE = Union[Type[AUDIO_CUTTER], None]
+AUDIO_ENCODER_TYPE = Union[Type[AUDIO_ENCODER], Sequence[Type[AUDIO_ENCODER]], None]
 
-    PATH = Union[str, Path]
+AUDIO_ENCODER_NAMES = Literal["flac", "opus", "aac", "passthrough"]
+
+CHAPTER = Union[OGMChapters, MatroskaXMLChapters]
 
 
 class Defaults:
     AAC: Dict[str, Any] = dict(bitrate=127, mode=BitrateMode.TVBR)
     OPUS: Dict[str, Any] = dict(bitrate=2 * 96, mode=BitrateMode.VBR, use_ffmpeg=True)
     FLAC: Dict[str, Any] = dict(level=FlacCompressionLevel.VARDOU, use_ffmpeg=True)
-
-    # TODO: finish this
-    VIDEO_ENCODER = [
-        "-o {clip_output:s} --output-depth {bits:d} - --fps {fps_num:d}/{fps_den:d} --frames {frames:d}"
-    ]
-
-    X264 = VIDEO_ENCODER + [
-        " --demuxer y4m"
-    ]
-
-    X265 = VIDEO_ENCODER + [
-        " --y4m" +
-        " --min-luma {min_luma:d} --max-luma {max_luma:d}" +
-        " --videoformat ntsc --range limited --colormatrix bt709 --colorprim bt709 --transfer bt709 --sar 1"
-    ]
-
 
 
 class Encoder:
@@ -75,18 +64,19 @@ class Encoder:
     chapters_names: Sequence[str | None] | None
     """Names of the chapters"""
 
-    v_encoder: Types.VIDEO_ENCODER | None
+    v_encoder: VIDEO_ENCODER | None
     """Video encoder"""
-    v_lossless_encoder: Types.VIDEO_LOSSLESS_ENCODER | None
+    v_lossless_encoder: VIDEO_LOSSLESS_ENCODER | None
     """Lossless video encoder"""
 
     a_tracks: List[int]
     """Audio tracks"""
-    a_extracter: Sequence[Types.AUDIO_EXTRACTOR] | None
+    # a_extracter: Sequence[Types.AUDIO_EXTRACTOR] | None
+    a_extracter: AUDIO_EXTRACTER | None
     """Audio extractor"""
-    a_cutter: Sequence[Types.AUDIO_CUTTER] | None
+    a_cutter: List[AUDIO_CUTTER] | None
     """Audio cutter"""
-    a_encoder: Sequence[Types.AUDIO_ENCODER] | None
+    a_encoder: List[AUDIO_ENCODER] | None
     """Audio encoder"""
 
     mux: MatroskaFile | None
@@ -126,8 +116,8 @@ class Encoder:
 
     def video_encoder(
         self,
-        encoder: Type[Types.VIDEO_ENCODER] = X265,
-        settings: str | List[str] | None = None,
+        encoder: Type[VIDEO_ENCODER],
+        settings: str | List[str] | Dict[str, Any],
         zones: Dict[Tuple[int, int], Dict[str, Any]] | None = None,
         resumable: bool = False,
         **encoder_params: Any,
@@ -144,7 +134,7 @@ class Encoder:
 
     def video_lossless_encoder(
         self,
-        encoder: Type[Types.VIDEO_LOSSLESS_ENCODER] = FFV1,
+        encoder: Type[VIDEO_LOSSLESS_ENCODER] = FFV1,
         **encoder_params: Any
     ) -> None:
         # don't use lossless encoder very often so probably missing things
@@ -153,65 +143,59 @@ class Encoder:
 
     def audio_encoder(
         self,
-        tracks: int | List[int] = 1,
-        extracter: Type[Types.AUDIO_EXTRACTOR] | Sequence[Type[Types.AUDIO_EXTRACTOR]] = FFmpegAudioExtracter,
-        cutter: Type[Types.AUDIO_CUTTER] | Sequence[Type[Types.AUDIO_CUTTER]] = EztrimCutter,
-        encoder: Type[Types.AUDIO_ENCODER] | Sequence[Type[Types.AUDIO_ENCODER]] | None = QAACEncoder,
-        extracter_settings: Dict[str, Any] = {},  # need support for per extracter/cutter/encoder settings
+        tracks: int | List[int],
+        extracter: AUDIO_EXTRACTER_TYPE = FFmpegAudioExtracter,
+        cutter: AUDIO_CUTTER_TYPE = EztrimCutter,
+        encoder: AUDIO_ENCODER_TYPE = QAACEncoder,
+        extracter_settings: Dict[str, Any] = {},
         cutter_settings: Dict[str, Any] = {},
-        encoder_settings: Dict[str, Any] = {},
+        encoder_settings: Dict[AUDIO_ENCODER_NAMES, Dict[str, Any]] = {},
     ) -> None:
         if isinstance(tracks, int):
             tracks = [tracks]
         self.a_tracks = tracks
         track_number = len(self.a_tracks)
 
-        if not isinstance(extracter, Sequence):
-            extracter = [extracter] * track_number
-        assert len(extracter) == track_number
-
-        if not isinstance(cutter, Sequence):
-            cutter = [cutter] * track_number
-        assert len(cutter) == track_number
-
         if encoder is not None:
             if not isinstance(encoder, Sequence):
                 encoder = [encoder] * track_number
-            assert len(encoder) == track_number
+            else:
+                assert len(encoder) == track_number
 
         logger.info(
-            f"Audio extractor: {self._print_sequence_name(extracter)}" +
-            f"\nAudio cutter: {self._print_sequence_name(cutter)}" +
+            f"Audio extractor: {self._print_name(extracter)}" +
+            f"\nAudio cutter: {self._print_name(cutter)}" +
             f"\nAudio encoder: {self._print_sequence_name(encoder)}" +
             f"\nTrack(s): {self._print_sequence_name(tracks)}"
         )
 
-        self.a_extracter = []
-        self.a_cutter = []
-        self.a_encoder = []
-
         output_tracks = range(1, track_number + 1)
 
-        for in_idx, out_idx, extracter, cutter in zip(self.a_tracks, output_tracks, extracter, cutter):
-            self.a_extracter.append(extracter(self.file, track_in=in_idx, track_out=out_idx), **extracter_settings)
-            self.a_cutter.append(cutter(self.file, track=out_idx, **cutter_settings))
+        if extracter is not None:
+            self.a_extracter = extracter(
+                self.file, track_in=self.a_tracks, track_out=output_tracks, **extracter_settings
+            )
+
+        if cutter is not None:
+            self.a_cutter = []
+            for out_idx in output_tracks:
+                self.a_cutter.append(cutter(self.file, track=out_idx, **cutter_settings))
 
         if encoder is not None:
+            self.a_encoder = []
             for out_idx, encoder in zip(output_tracks, encoder):
                 if encoder == QAACEncoder:
-                    enc_args = Defaults.AAC
-                    enc_args |= encoder_settings
+                    enc_args = Defaults.AAC | (encoder_settings.get("aac") or {})
                 elif encoder == OpusEncoder:
-                    enc_args = Defaults.OPUS
-                    enc_args |= encoder_settings
+                    enc_args = Defaults.OPUS | (encoder_settings.get("opus") or {})
                 elif encoder == FlacEncoder:
-                    enc_args = Defaults.FLAC
-                    enc_args |= encoder_settings
+                    enc_args = Defaults.FLAC | (encoder_settings.get("flac") or {})
+                elif encoder == PassthroughAudioEncoder:
+                    enc_args = {}
                 else:
-                    enc_args = encoder_settings
+                    raise ValueError("Invalid audio encoder")
+
                 self.a_encoder.append(encoder(self.file, track=out_idx, **enc_args))
-        else:
-            self.a_encoder = None
 
 
     def muxer(
@@ -262,7 +246,7 @@ class Encoder:
 
     def make_chapters(
         self,
-        chapter_format: Type[Types.CHAPTER] = MatroskaXMLChapters,
+        chapter_format: Type[CHAPTER] = MatroskaXMLChapters,
         path: str | VPath | None = None
     ) -> None:
         assert self.chapters
@@ -275,10 +259,13 @@ class Encoder:
         if isinstance(path, str):
             path = VPath(path)
 
+        # mypy is so fucking dumb
         if(all(isinstance(chapter, int) for chapter in self.chapters)):
             chapters = [Chapter(f"Chapter {i}", f, None) for i, f in enumerate(self.chapters, 1)]  # type: ignore
-        else:
+        elif(all(isinstance(chapter, Chapter) for chapter in self.chapters)):
             chapters = self.chapters  # type: ignore
+        else:
+            raise ValueError("Invalid chapter type, should be all int or all Chapter instance")
 
         chapter_file = chapter_format(path)
         chapter_file.create(chapters, Fraction(self.clip.fps_num, self.clip.fps_den))
@@ -311,47 +298,48 @@ class Encoder:
         self.runner.run()
 
 
-    def generate_keyframes(self, delete_index: bool = True) -> None:
-        import kagefunc as kgf
-
+    def generate_keyframes(self, mode: SceneChangeMode = SceneChangeMode.WWXD, delete_index: bool = True) -> None:
         if self.file.name_file_final.exists():
-            clip = source(self.file.name_file_final.to_str(), force_lsmas=True)
             logger.info("Generating keyframes from encoded file")
-
-            if delete_index:
-                os.remove(f"{self.file.name_file_final.to_str()}.lwi")
+            clip = source(self.file.name_file_final.to_str(), force_lsmas=True)
         else:
-            clip = self.clip
             logger.info("Generating keyframes from filtered clip")
+            clip = self.clip
 
-        kgf.generate_keyframes(clip, f"{self.file.name_file_final.to_str()}_keyframes.txt")
-        print("")
+        kf = find_scene_changes(clip, mode)
+
+        with open(f"{self.file.name_file_final.to_str()}_keyframes.txt", "w") as f:
+            f.write("# WWXD log file, using qpfile format\n\n")
+            f.writelines([f"{frame} I -1\n" for frame in kf[1:]])
+
+        if delete_index:
+            os.remove(f"{self.file.name_file_final.to_str()}.lwi")
 
 
     def clean_up(
         self,
-        add_file: Types.PATH | List[Types.PATH] | None = None,
-        ignore_file: VPath | List[VPath] | None = None
+        add_file: str | Sequence[str] | None = None,
+        ignore_file: VPath | Sequence[VPath] | None = None
     ) -> None:
         logger.info("Cleaning up extra files")
 
         if not hasattr(self, "runner"):
             logger.error("Runner not found", False)
 
-        if isinstance(add_file, str) or isinstance(add_file, Path):
-            add_file = [add_file]
-        elif add_file is None:
+        if add_file is None:
             add_file = []
+        elif isinstance(add_file, str):
+            add_file = [add_file]
 
-        if isinstance(ignore_file, VPath):
-            ignore_file = [ignore_file]
-        elif ignore_file is None:
+        if ignore_file is None:
             ignore_file = []
+        elif isinstance(ignore_file, VPath):
+            ignore_file = [ignore_file]
 
-        for file in add_file:
-            self.runner.work_files.add(file)
-        for file in ignore_file:
-            self.runner.work_files.remove(file)
+        for add in add_file:
+            self.runner.work_files.add(add)
+        for ignore in ignore_file:
+            self.runner.work_files.remove(ignore)
 
         self.runner.work_files.clear()
 
@@ -366,16 +354,18 @@ class Encoder:
             rmtree("comps")
             logger.info("Removed old comps folder")
 
-        def write_props(clip: vs.VideoNode, props: str | List[str] | None = None) -> vs.VideoNode:
+        def _write_props(clip: vs.VideoNode, props: str | List[str] | None = None) -> vs.VideoNode:
             if props is None:
                 props = ["_FrameNumber", "_PictType"]
             return clip.text.FrameProps(props, 7, 1)
 
+        lossless = self.file.name_clip_output.append_stem("_lossless.mkv")
+        filtered = source(lossless.resolve().to_str(), force_lsmas=True) if lossless.exists() else self.clip
         make_comps(
             {
-                "source": write_props(self.file.clip_cut),
-                "filtered": write_props(self.clip),
-                "encode": write_props(source(self.file.name_file_final.to_str(), force_lsmas=True)),
+                "source": _write_props(self.file.clip_cut),
+                "filtered": _write_props(filtered),
+                "encode": _write_props(source(self.file.name_file_final.to_str(), force_lsmas=True)),
             },
             **args
         )

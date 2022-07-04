@@ -1,6 +1,6 @@
 -o {clip_output:s} - --y4m
 --preset slow
---crf 12.42 --psy-rd 2.25 --psy-rdoq 2.25 --aq-mode 3 --aq-strength 0.75 --qcomp 0.8 --deblock -2:-2
+--crf 13 --psy-rd 2 --psy-rdoq 2.25 --aq-mode 3 --aq-strength 0.75 --qcomp 0.75 --deblock -2:-2
 --ref 6 --rd 3 --no-rect --no-amp --rskip 0 --tu-intra-depth 2 --tu-inter-depth 2
 --bframes 16 --rc-lookahead 48 --min-keyint 24 --keyint 240 --no-open-gop
 --weightb --subme 5 --merange 48

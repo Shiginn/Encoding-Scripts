@@ -8,7 +8,7 @@ EP_NUM = __file__[-5:-3]
 
 JPBD = BDMV.get_episode(EP_NUM)
 CHAPTERS = BDMV.get_chapter(EP_NUM)
-CHAPTERS_NAMES = ["Intro", "Partie A", "Partie B", "Outro"]
+CHAPTERS_NAMES = ["Intro", "Partie A", "Partie B", "Epilogue"]
 
 
 class Filtering(ElainaFiltering):
