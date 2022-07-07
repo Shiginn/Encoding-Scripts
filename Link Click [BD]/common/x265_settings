@@ -1,0 +1,10 @@
+- --y4m --output-depth {bits:d} -o {clip_output:s}
+--preset slow
+--crf 14 --psy-rd 1.85 --psy-rdoq 1.85 --aq-mode 3 --aq-strength 0.8 --qcomp 0.7 --deblock -2:-2
+--ref 6 --rd 3 --no-rect --no-amp --rskip 0 --tu-intra-depth 2 --tu-inter-depth 2
+--bframes 16 --rc-lookahead 48 --min-keyint {min_keyint:d} --keyint {keyint:d} --no-open-gop
+--weightb --subme 5 --merange 48
+--no-sao --no-sao-non-deblock --no-strong-intra-smoothing --no-cutree
+--sar 1 --videoformat ntsc --range limited --min-luma {min_luma:d} --max-luma {max_luma:d}
+--colormatrix {matrix:d} --colorprim {primaries:d} --transfer {transfer:d}
+--fps {fps_num:d}/{fps_den:d} --frames {frames:d}
