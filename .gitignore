@@ -15,7 +15,6 @@ premux
 
 # unwanted files
 FSRCNNX_x2_56-16-4-1.glsl
-x265_settings_test
 comp.py
 batch.py
 testing.py
@@ -26,6 +25,7 @@ testing.py
 **.mkv
 **.png
 **.wav
+**.w64
 **.flac
 **.aac
 **.m4a
